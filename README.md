@@ -24,7 +24,7 @@ We use the [official implementation](https://github.com/ajbrock/BigGAN-PyTorch) 
 
 The StyleGANs are provided by [genforce](https://github.com/genforce/genforce), which are used to generate perception-based transformations for several specialized datasets.
 
-To generate perception-based transformation, set up above the repos and run `generate_T.py`.
+To generate perception-based transformation, set up the above repos and run `generate_T.py`.
 
 ## Testing Methods
 
