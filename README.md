@@ -20,9 +20,9 @@ Perception-based transformation is implemented using `Perceptual` in `transforma
 
 ### Generative Models
 
-We use the [official implementation](https://github.com/ajbrock/BigGAN-PyTorch) of BigGAN for generating perception-based transformations for ImageNet.
+We use the [official implementation](https://github.com/ajbrock/BigGAN-PyTorch) of BigGAN for generating perception-based transformations for ImageNet. We have extracted some code and configurations from the official BigGAN repo to ease the import; please refer to the files in the `BigGAN` folder (which need to be put into the root directory of the official BigGAN repo). 
 
-The StyleGANs are provided by [genforce](https://github.com/genforce/genforce), which are used to generate perception-based transformations for several specialized datasets.
+The StyleGANs are provided by [genforce](https://github.com/genforce/genforce), which are used to generate perception-based transformations for several specialized datasets. We have revised the original `synthesize.py` in the genforce repo to ease the import; our revised script is provided as `genforce/synthesize.py`.
 
 To generate perception-based transformation, set up the above repos and run `generate_T.py`.
 
