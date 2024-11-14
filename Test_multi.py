@@ -10,8 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class Tester:
-    def __init__(self, args, model, seed_corpus, objective, T_list):
+class CTester:
+    def __init__(self, args, model, seed_corpus, objective, T_list, T_prob):
         assert args.batch_size == 1
         self.args = args
         self.model = model
@@ -19,6 +19,7 @@ class Tester:
         self.init_length = len(seed_corpus)
         self.objective = objective
         self.T_list = T_list
+        self.T_prob = np.array(T_prob)
 
         self.result = []
         self.EP_counter = np.zeros(len(self.T_list))
@@ -30,9 +31,9 @@ class Tester:
 
     def can_terminate(self):
         condition = sum([
+            self.epoch >= 10000,
             self.get_p_sum() == 0,
             len(np.where(self.EP_counter == 0)[0]) == 0,
-            self.epoch >= 10000,
             # self.delta_time > 60 * 10 * 1,
         ]) 
         return condition > 0
@@ -48,13 +49,14 @@ class Tester:
         self.seed_corpus[idx]['p'] -= 1
         return self.seed_corpus[idx]
 
-    def select_T(self):
-        idx = np.random.choice(len(self.T_list))
+    def select_T(self, y_id):
+        prob = ((self.T_prob == y_id) | (self.T_prob < 0)).astype(np.float32)
+        idx = np.random.choice(len(self.T_list), p=prob/np.sum(prob))
         self.T_counter[idx] += 1
         return self.T_list[idx], idx
 
     def mutate(self, seed):
-        T, T_idx = self.select_T()
+        T, T_idx = self.select_T(seed['y'].item())
         x_, z_ = T.mutate(seed)
         return x_, z_, T_idx
 
@@ -71,7 +73,7 @@ class Tester:
             return (pred != pred_).sum(0) > 0
 
     def gain(self, seed, x_):
-        if self.args.criterion in ['Rand', 'ARand']:
+        if self.args.criterion in ['Rand', 'RandRand']:
             return True
         elif args.criterion in ['Entropy']:
             return self.objective.gain(seed['x'].cuda(), x_.cuda())
@@ -89,7 +91,7 @@ class Tester:
         while not self.can_terminate():
 
             self.EP_cnt_list.append(len(np.where(self.EP_counter > 0)[0]))
-            
+
             seed = self.select_input()
             x_, z_, T_idx = self.mutate(seed)
 
@@ -102,7 +104,7 @@ class Tester:
                 # self.create_input(x_, z_)
                 # self.print_info()
             elif self.gain(seed, x_):
-                if self.args.criterion not in ['ARand']:
+                if self.args.criterion not in ['RandRand']:
                     self.create_input(x_, z_, seed['y'])
 
             self.delta_time = time.time() - start_time
@@ -140,7 +142,7 @@ class Tester:
         raise NotImplementedError
 
 
-class PropertyTester(Tester):
+class PropertyTester(CTester):
 
     def select_T(self):
         assert len(self.T_list) == len(self.EP_counter)
@@ -159,7 +161,7 @@ class PropertyTester(Tester):
         return False
 
 
-class InputTester(Tester):
+class InputTester(CTester):
 
     def fault(self, x, x_, T_idx):
         if self.mis_pred(x, x_):
@@ -205,45 +207,6 @@ class PInputTester(InputTester):
             self.delta_time = time.time() - start_time
             self.epoch += 1
         self.exit()
-
-from face import PairwiseDistance
-
-class RegInputTester(InputTester):
-    def __init__(self, args, model, seed_corpus, objective, T_list):
-        super(RegInputTester, self).__init__(args, model, seed_corpus, objective, T_list)
-        self.l2_dist = PairwiseDistance(2)
-
-    def mis_pred(self, x, x_):
-        with torch.no_grad():
-            feat, pred = self.model(x.cuda())
-            feat_, pred_ = self.model(x_.cuda())
-            dist = self.l2_dist.apply(feat, feat_).item()
-            return (1 / (1 + dist)) < self.args.reg_threshold
-
-class PRegInputTester(PInputTester):
-    def __init__(self, args, model, seed_corpus, objective, T_list):
-        super(PRegTester, self).__init__(args, model, seed_corpus, objective, T_list)
-        self.l2_dist = PairwiseDistance(2)
-
-    def mis_pred(self, x, x_):
-        with torch.no_grad():
-            feat, pred = self.model(x.cuda())
-            feat_, pred_ = self.model(x_.cuda())
-            dist = self.l2_dist.apply(feat, feat_).item()
-            return (1 / (1 + dist)) < self.args.reg_threshold
-
-class RegPropertyTester(PropertyTester):
-    def __init__(self, args, model, seed_corpus, objective, T_list):
-        super(RegPropertyTester, self).__init__(args, model, seed_corpus, objective, T_list)
-        self.l2_dist = PairwiseDistance(2)
-
-    def mis_pred(self, x, x_):
-        with torch.no_grad():
-            feat, pred = self.model(x.cuda())
-            feat_, pred_ = self.model(x_.cuda())
-            dist = self.l2_dist.apply(feat, feat_).item()
-            return (1 / (1 + dist)) < self.args.reg_threshold
-
 
 
 if __name__ == '__main__':
@@ -306,15 +269,16 @@ if __name__ == '__main__':
 
     from prepare_T import GtoParams
     args.image_size = GtoParams[args.G_name]['image_size']
-    args.trunc_psi = GtoParams[args.G_name]['trunc_psi']
-    args.trunc_layers = GtoParams[args.G_name]['trunc_layers']
 
     from prepare_model import get_model
     model = get_model(args.model)
     model = model.cuda()
 
-    assert 'stylegan' in args.G_name:
-    G = import_generator(args.G_name)
+    assert 'BigGAN' in args.G_name:
+    import sys
+    sys.path.insert(0, './BigGAN/')
+    from import_biggan import get_G
+    G = get_G()
 
     def to_input(image, image_size=args.image_size):
         with torch.no_grad():
@@ -331,36 +295,33 @@ if __name__ == '__main__':
 
     from prepare_T import get_stylize, get_perceptual
     stylize_list = get_stylize(args.image_size)
-    perceptual_list = get_perceptual(args.G_name)
-
+    T_prob = [-1] * (len(basic_T_list) + len(stylize_list))
+    perceptual_list = []
+    NUM_LABEL = 20
+    Z_DIM = 120
+    print('Building seed corpus for %d classes...' % NUM_LABEL)
     seed_corpus = []
-    print('Building seed corpus...')
-    with torch.no_grad():
-        for i in tqdm(range(args.num_corpus)):
-            code = torch.randn(args.batch_size, G.z_space_dim).cuda()
-            z = G.mapping(code, None)['w']
-            wp = G.truncation(z, args.trunc_psi, args.trunc_layers)
-            image = G.synthesis(wp)['image']
-            x = to_input(image)
-            if args.model in ['FaceNet']:
-                y = torch.zeros((args.batch_size,)).type(torch.LongTensor)
-            else:
-                y = model(x).argmax(-1)
-            seed_corpus.append({
-                'x': x.cpu(), 'z': z.cpu(), 'y': y.cpu(),
-                'p': args.init_p
-            })
-
+    for label_index in range(NUM_LABEL):
+        with torch.no_grad():    
+            for i in range(args.num_corpus // NUM_LABEL):
+                z = torch.randn(args.batch_size, Z_DIM).cuda()
+                y = (torch.ones((args.batch_size, )) * label_index).type(torch.LongTensor).cuda()
+                y_embed = G.shared(y)
+                image = G((z, y_embed))
+                x = to_input(image)
+                seed_corpus.append({
+                    'x': x.cpu(), 'z': z.cpu(), 'y': y.cpu(),
+                    'p': args.init_p
+                })
+        class_perceptual_list = get_class_perceptual(args.G_name, label_index, int(np.ceil(args.num_percep / NUM_LABEL)))
+        perceptual_list += class_perceptual_list
+        T_prob += [label_index] * len(class_perceptual_list)
 
     print('%d basic T.\n%d stylize T.\n%d perceptual T.' \
         % (len(basic_T_list), len(stylize_list), len(perceptual_list))
         )
 
-    full_T_list = basic_T_list + stylize_list
-    if args.num_percep > 0:
-        full_T_list += perceptual_list[:args.num_percep]
-    else:
-        full_T_list += perceptual_list
+    full_T_list = basic_T_list + stylize_list + perceptual_list
     print('Total %d transformations.' % len(full_T_list))
 
     if args.criterion in ['Rand', 'ARand', 'PRand']:
@@ -386,17 +347,18 @@ if __name__ == '__main__':
 
     if args.mode == 'input':
         if args.criterion in ['KL', 'JS', 'WD', 'HD', 'PRand']:
-            Engine = PRegInputTester if args.model in ['FaceNet'] else PInputTester
+            Engine = PInputTester
         else:
-            Engine = RegInputTester if args.model in ['FaceNet'] else InputTester
+            Engine = InputTester
     elif args.mode == 'property':
-        Engine = RegPropertyTester if args.model in ['FaceNet'] else PropertyTester
+        Engine = PropertyTester
 
     tester = Engine(args, 
                 model=model,
                 seed_corpus=seed_corpus,
                 objective=objective,
                 T_list=full_T_list,
+                T_prob=T_prob,
             )
     tester.run()
     print('%f s' % tester.delta_time)

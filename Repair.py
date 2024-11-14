@@ -290,7 +290,6 @@ if __name__ == '__main__':
     if 'stylegan' in args.G_name:
         perceptual_list = get_perceptual(args.G_name)
     else:
-        
         perceptual_list = get_class_perceptual(args.G_name, LABEL_INDEX, args.num_percep)
 
     print('%d basic T.\n%d stylize T.\n%d perceptual T.' \

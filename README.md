@@ -75,9 +75,9 @@ Run `python generate_T.py` to generate transformations.
 
 ### RQ1
 
-For ETI related experiments, run `python Test.py --mode input`.
+ETI related experiments: run `python Test_multi.py --mode input` and `python Test.py --mode input` for ImageNet-trained DNNs and other DNNs, respectively.
 
-For EP related experiments, run `python Test.py --mode property`.
+EP related experiments: run `python Test_multi.py --mode property` and `python Test_multi.py --mode input` for ImageNet-trained DNNs and other DNNs, respectively.
 
 ### RQ2
 
