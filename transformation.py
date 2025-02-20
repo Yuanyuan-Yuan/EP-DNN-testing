@@ -9,14 +9,20 @@ import torch
 import torch.nn as n
 import torch.nn.functional as F
 
-import tool
-
 __all__ = [
     'Noise', 'Brightness', 'Contrast', 'Blur',
     'Translation', 'Scale', 'Rotation', 'Shear', 'Reflection',
     'Cloud', 'Fog', 'Snow', 'Rain',
     'Stylize', 'Perceptual'
 ]
+
+def general_normalize(tsr):
+    # [0, 1] --> [-1, 1]
+    return (tsr - 0.5) / 0.5
+
+def general_normalize_inv(tsr):
+    # [-1, 1] --> [0, 1]
+    return tsr * 0.5 + 0.5
 
 class Transformation:
     def __init__(self):
@@ -26,14 +32,14 @@ class Transformation:
     def torch2cv(self, tsr):
         assert tsr.size(0) == 1
         # tsr.max() == 1 and tsr.min() == -1
-        tsr = tool.general_normalize_inv(tsr)
+        tsr = general_normalize_inv(tsr)
         arr = tsr[0].detach().transpose(0, 2).cpu().numpy() * 255
         return arr
 
     def cv2torch(self, arr):
         arr = arr.astype(np.float32)
         tsr = torch.from_numpy(arr / 255).transpose(0, 2).unsqueeze(0)
-        tsr = tool.general_normalize(tsr)#.to(self.device)
+        tsr = general_normalize(tsr)#.to(self.device)
         return tsr
 
     def cv_pad(self, src, dst):
